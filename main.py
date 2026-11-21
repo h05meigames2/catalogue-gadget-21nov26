@@ -1,168 +1,163 @@
 #!/usr/bin/env python3
-"""Catalogue photo of an impossible gadget: a self-powered power strip.
+"""Catalogue photo of an impossible gadget: the SELF-POWERED power strip.
 
-The strip's own cable loops back and plugs into its own socket, so it
-powers itself forever. One accessory: the electricity bill for $0.00.
-Drawn with PIL only, no network. Output: $MAKEFUN_OUTPUT_DIR/entry.png
-(or ./out/entry.png), 1024x768 PNG.
+A sleek white power strip whose own cable loops back and plugs into its
+own socket. One accessory: a paper electricity bill reading $0.00.
+
+Drawn entirely with Pillow (stdlib + PIL only, no network).
+Writes one image to $MAKEFUN_OUTPUT_DIR/entry.png (fallback ./out/entry.png).
 """
+import math
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-S = 2  # supersample factor
-W, H = 1024 * S, 768 * S
+W, H = 1024, 768
 
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FONT_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-
-
-def font(size):
-    return ImageFont.truetype(FONT, size * S)
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
-def font_reg(size):
-    return ImageFont.truetype(FONT_REG, size * S)
+def font(size, bold=False):
+    return ImageFont.truetype(FONT_B if bold else FONT, size)
+
+
+def rounded_rect(d, box, radius, **kw):
+    d.rounded_rectangle(box, radius=radius, **kw)
+
+
+def bezier(p0, p1, p2, p3, n=90):
+    pts = []
+    for i in range(n + 1):
+        t = i / n
+        mt = 1 - t
+        x = mt**3 * p0[0] + 3 * mt * mt * t * p1[0] + 3 * mt * t * t * p2[0] + t**3 * p3[0]
+        y = mt**3 * p0[1] + 3 * mt * mt * t * p1[1] + 3 * mt * t * t * p2[1] + t**3 * p3[1]
+        pts.append((x, y))
+    return pts
 
 
 def main():
-    img = Image.new("RGB", (W, H), (244, 246, 248))
+    # ---- backdrop: clean studio gradient ---------------------------------
+    img = Image.new("RGB", (W, H))
+    px = img.load()
+    top = (250, 251, 253)
+    bot = (226, 229, 233)
+    for y in range(H):
+        t = y / (H - 1)
+        # gentle ease so the top stays bright and the floor is a touch darker
+        t = t * t * 0.6 + t * 0.4
+        px_line = tuple(int(top[c] + (bot[c] - top[c]) * t) for c in range(3))
+        for x in range(W):
+            px[x, y] = px_line
     d = ImageDraw.Draw(img, "RGBA")
 
-    # ---- studio backdrop: soft vertical gradient + seamless floor ----
-    for y in range(H):
-        t = y / H
-        r = int(246 - 14 * t)
-        g = int(248 - 14 * t)
-        b = int(250 - 12 * t)
-        d.line([(0, y), (W, y)], fill=(r, g, b))
-    # faint horizon glow behind product
+    # soft radial pool of light behind the product
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glow)
-    gd.ellipse([W * 0.22, H * 0.08, W * 0.78, H * 0.85], fill=(255, 255, 255, 90))
-    glow = glow.filter(ImageFilter.GaussianBlur(60 * S))
+    gd.ellipse((180, 60, 860, 700), fill=(255, 255, 255, 90))
+    glow = glow.filter(ImageFilter.GaussianBlur(90))
     img.paste(Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB"), (0, 0))
     d = ImageDraw.Draw(img, "RGBA")
 
-    # ---- soft floor shadow under the strip ----
+    # ---- soft contact shadows (blurred layer) ----------------------------
     sh = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     sd = ImageDraw.Draw(sh)
-    sd.ellipse([150 * S, 520 * S, 830 * S, 590 * S], fill=(40, 50, 60, 70))
-    sh = sh.filter(ImageFilter.GaussianBlur(18 * S))
+    sd.ellipse((150, 545, 800, 600), fill=(30, 34, 40, 110))   # strip shadow
+    sd.ellipse((800, 560, 990, 610), fill=(30, 34, 40, 90))    # bill shadow
+    sh = sh.filter(ImageFilter.GaussianBlur(14))
     img.paste(Image.alpha_composite(img.convert("RGBA"), sh).convert("RGB"), (0, 0))
     d = ImageDraw.Draw(img, "RGBA")
 
-    # ---- cable: thick dark loop leaving right end, arcing down and back
-    # up to plug into the leftmost socket ----
-    cable_pts = []
-    # bezier-ish path: start at right end of strip, sweep down-right,
-    # loop low, come back up-left into socket 1
-    import math
-    def bez(p0, p1, p2, p3, n=60):
-        pts = []
-        for i in range(n + 1):
-            t = i / n
-            x = (1 - t) ** 3 * p0[0] + 3 * (1 - t) ** 2 * t * p1[0] + 3 * (1 - t) * t ** 2 * p2[0] + t ** 3 * p3[0]
-            y = (1 - t) ** 3 * p0[1] + 3 * (1 - t) ** 2 * t * p1[1] + 3 * (1 - t) * t ** 2 * p2[1] + t ** 3 * p3[1]
-            pts.append((x * S, y * S))
-        return pts
+    # ---- the cable: exits right end, loops up, plugs into its own socket -
+    cable_pts = bezier((792, 505), (905, 470), (945, 250), (830, 175),
+                       60) + bezier((830, 175), (720, 110), (645, 170), (600, 334), 60)
+    d.line(cable_pts, fill=(52, 56, 62), width=26, joint="curve")
+    # cable highlight so it reads as round rubber, not a flat line
+    hi_pts = [(x - 4, y - 6) for (x, y) in cable_pts]
+    d.line(hi_pts, fill=(110, 116, 124), width=6, joint="curve")
 
-    cable_pts = bez((745, 445), (880, 470), (900, 640), (700, 660))
-    cable_pts += bez((700, 660), (480, 685), (330, 620), (300, 470))
-    # cable body (dark grey with lighter top edge highlight)
-    d.line(cable_pts, fill=(52, 58, 66), width=15 * S, joint="curve")
-    d.line(cable_pts, fill=(96, 104, 114), width=5 * S, joint="curve")
+    # ---- power strip body -------------------------------------------------
+    bx0, by0, bx1, by1 = 170, 420, 800, 545
+    rounded_rect(d, (bx0, by0, bx1, by1), 26, fill=(250, 250, 252),
+                 outline=(196, 200, 206), width=2)
+    # top highlight + bottom shade for a moulded-plastic look
+    rounded_rect(d, (bx0 + 4, by0 + 4, bx1 - 4, by0 + 26), 20, fill=(255, 255, 255))
+    d.rounded_rectangle((bx0 + 4, by1 - 22, bx1 - 4, by1 - 4), radius=18,
+                        fill=(214, 217, 222))
+    # end caps
+    d.rounded_rectangle((bx0 + 2, by0 + 2, bx0 + 26, by1 - 2), radius=12,
+                        fill=(232, 234, 238))
+    d.rounded_rectangle((bx1 - 28, by0 + 2, bx1 - 2, by1 - 2), radius=12,
+                        fill=(232, 234, 238))
 
-    # ---- power strip body: sleek white slab, slight perspective top ----
-    # top face
-    d.polygon([(180 * S, 400 * S), (760 * S, 400 * S), (745 * S, 378 * S),
-               (195 * S, 378 * S)], fill=(226, 230, 234))
-    # front face
-    d.rounded_rectangle([180 * S, 395 * S, 760 * S, 505 * S], radius=18 * S,
-                        fill=(250, 251, 252), outline=(196, 202, 208), width=2 * S)
-    # top highlight line
-    d.line([(195 * S, 402 * S), (745 * S, 402 * S)], fill=(255, 255, 255), width=3 * S)
-    # bottom shade line
-    d.line([(195 * S, 498 * S), (745 * S, 498 * S)], fill=(214, 219, 224), width=3 * S)
-
-    # ---- six sockets on the top face ----
-    for i in range(6):
-        x0 = (205 + i * 82) * S
-        y0 = 408 * S
-        d.rounded_rectangle([x0, y0, x0 + 58 * S, y0 + 58 * S], radius=10 * S,
-                            fill=(238, 240, 242), outline=(200, 206, 212), width=2 * S)
-        # three pin holes
-        for hx, hy in ((15, 16), (43, 16), (29, 40)):
-            d.ellipse([x0 + hx * S - 4 * S, y0 + hy * S - 5 * S,
-                       x0 + hx * S + 4 * S, y0 + hy * S + 5 * S],
-                      fill=(38, 42, 48))
-    # leftmost socket is occupied by the plug: cover its holes with plug prongs
-    # ---- plug head entering socket 1 ----
-    d.rounded_rectangle([232 * S, 452 * S, 300 * S, 486 * S], radius=8 * S,
-                        fill=(52, 58, 66), outline=(30, 34, 40), width=2 * S)
-    d.rounded_rectangle([246 * S, 424 * S, 286 * S, 456 * S], radius=6 * S,
-                        fill=(70, 76, 86))
-    # prongs into the socket
-    d.rectangle([252 * S, 408 * S, 260 * S, 428 * S], fill=(180, 184, 190))
-    d.rectangle([272 * S, 408 * S, 280 * S, 428 * S], fill=(180, 184, 190))
-
-    # ---- rocker switch + glowing LED on front face (right of last socket) ----
-    d.rounded_rectangle([700 * S, 452 * S, 748 * S, 488 * S], radius=8 * S,
-                        fill=(226, 229, 233), outline=(190, 196, 202), width=2 * S)
-    d.line([(724 * S, 456 * S), (724 * S, 484 * S)], fill=(120, 126, 134), width=3 * S)
+    # rocker switch (left end) + green LED
+    rounded_rect(d, (196, 448, 232, 520), 8, fill=(206, 48, 48),
+                 outline=(150, 30, 30), width=1)
+    d.line((214, 460, 214, 508), fill=(255, 255, 255), width=3)
     # LED glow
     led = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ld = ImageDraw.Draw(led)
-    ld.ellipse([676 * S, 460 * S, 696 * S, 480 * S], fill=(60, 220, 120, 110))
-    led = led.filter(ImageFilter.GaussianBlur(6 * S))
+    ld.ellipse((246 - 22, 452 - 22, 246 + 22, 452 + 22), fill=(60, 220, 110, 120))
+    led = led.filter(ImageFilter.GaussianBlur(10))
     img.paste(Image.alpha_composite(img.convert("RGBA"), led).convert("RGB"), (0, 0))
     d = ImageDraw.Draw(img, "RGBA")
-    d.ellipse([680 * S, 464 * S, 692 * S, 476 * S], fill=(46, 200, 110),
-              outline=(20, 140, 70), width=2 * S)
+    d.ellipse((238, 444, 254, 460), fill=(46, 204, 96), outline=(20, 120, 55), width=2)
+    d.ellipse((242, 447, 248, 453), fill=(200, 255, 215))
 
-    # ---- brand label on front face ----
-    d.text((315 * S, 466 * S), "SELF-POWERED™", font=font(14), fill=(90, 96, 104))
-    d.text((315 * S, 485 * S), "Model SP-∞  •  0 W from the wall, forever",
-           font=font_reg(10), fill=(140, 146, 152))
+    # ---- five sockets ------------------------------------------------------
+    socket_xs = [300, 400, 500, 600, 700]
+    for i, cx in enumerate(socket_xs):
+        cy = 483
+        # recessed socket well
+        d.ellipse((cx - 30, cy - 30, cx + 30, cy + 30), fill=(228, 230, 234),
+                  outline=(180, 184, 190), width=2)
+        d.ellipse((cx - 22, cy - 22, cx + 22, cy + 22), fill=(38, 40, 44))
+        # two blade slots + round ground hole
+        d.rounded_rectangle((cx - 13, cy - 9, cx - 5, cy + 9), radius=3, fill=(12, 12, 14))
+        d.rounded_rectangle((cx + 5, cy - 9, cx + 13, cy + 9), radius=3, fill=(12, 12, 14))
+        d.ellipse((cx - 4, cy + 13, cx + 4, cy + 21), fill=(12, 12, 14))
 
-    # ---- screws at both ends of the strip ----
-    for sx in (196, 744):
-        d.ellipse([sx * S, 486 * S, (sx + 10) * S, 496 * S], fill=(200, 205, 211),
-                  outline=(160, 166, 172), width=1 * S)
-        d.line([(sx + 2) * S, 491 * S, (sx + 8) * S, 491 * S], fill=(140, 146, 152), width=1 * S)
+    # ---- the plug, inserted into socket #4 (x=600) ------------------------
+    # plug body: white, angled slightly, prongs disappearing into the socket
+    plug = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(plug)
+    pd.rounded_rectangle((572, 330, 628, 452), radius=14, fill=(245, 245, 247, 255),
+                         outline=(190, 193, 198, 255), width=2)
+    pd.rounded_rectangle((578, 344, 622, 372), radius=8, fill=(222, 224, 228, 255))
+    pd.line((584, 452, 584, 468), fill=(120, 124, 130, 255), width=7)
+    pd.line((616, 452, 616, 468), fill=(120, 124, 130, 255), width=7)
+    img.paste(Image.alpha_composite(img.convert("RGBA"), plug).convert("RGB"), (0, 0))
+    d = ImageDraw.Draw(img, "RGBA")
 
-    # ---- ONE accessory: paper electricity bill leaning at the right ----
-    bill = Image.new("RGBA", (340 * S, 460 * S), (0, 0, 0, 0))
+    # ---- brand text on the strip -------------------------------------------
+    d.text((300, 428), "SELF-POWERED", font=font(17, bold=True), fill=(90, 94, 100))
+    d.text((700, 428), "SP-\u221e", font=font(17, bold=True), fill=(90, 94, 100))
+    d.text((300, 520), "MODEL SP-\u221e  \u00b7  250V  \u00b7  NO GRID REQUIRED",
+           font=font(11), fill=(140, 144, 150))
+
+    # ---- accessory: the $0.00 electricity bill, leaning --------------------
+    bill = Image.new("RGBA", (300, 260), (0, 0, 0, 0))
     bd = ImageDraw.Draw(bill)
-    bd.rectangle([10 * S, 10 * S, 330 * S, 450 * S], fill=(255, 255, 255, 255),
-                 outline=(205, 210, 215), width=2 * S)
-    bd.rectangle([10 * S, 10 * S, 330 * S, 66 * S], fill=(42, 52, 64, 255))
-    bd.text((28 * S, 26 * S), "ELECTRICITY BILL", font=font(20), fill=(255, 255, 255))
-    bd.text((28 * S, 92 * S), "Account: SELF-POWERED", font=font_reg(15), fill=(70, 76, 84))
-    bd.text((28 * S, 122 * S), "Period: Nov 2026", font=font_reg(15), fill=(70, 76, 84))
-    bd.text((28 * S, 152 * S), "Usage: 0 kWh", font=font_reg(15), fill=(70, 76, 84))
-    bd.line([(28 * S, 196 * S), (312 * S, 196 * S)], fill=(210, 214, 218), width=2 * S)
-    bd.text((28 * S, 216 * S), "AMOUNT DUE", font=font(16), fill=(70, 76, 84))
-    bd.text((28 * S, 250 * S), "$0.00", font=font(58), fill=(24, 160, 90))
-    bd.text((28 * S, 340 * S), "Thank you for using", font=font_reg(14), fill=(120, 126, 134))
-    bd.text((28 * S, 364 * S), "absolutely nothing.", font=font_reg(14), fill=(120, 126, 134))
-    bill = bill.resize((250 * S, 338 * S), Image.LANCZOS)
+    bd.rectangle((8, 8, 292, 252), fill=(255, 255, 255, 255),
+                 outline=(205, 208, 212, 255), width=2)
+    bd.rectangle((8, 8, 292, 52), fill=(238, 240, 243, 255))
+    bd.text((22, 16), "ELECTRICITY BILL", font=font(19, bold=True), fill=(40, 42, 46))
+    bd.text((22, 68), "Account: SP-\u221e-0001", font=font(15), fill=(80, 84, 90))
+    bd.text((22, 94), "Period:  NOV 2026", font=font(15), fill=(80, 84, 90))
+    bd.text((22, 120), "Usage:  0 kWh", font=font(15), fill=(80, 84, 90))
+    bd.line((22, 150, 278, 150), fill=(200, 203, 208), width=2)
+    bd.text((22, 162), "AMOUNT DUE", font=font(18, bold=True), fill=(40, 42, 46))
+    bd.text((22, 190), "$0.00", font=font(42, bold=True), fill=(30, 160, 80))
+    bd.text((180, 204), "PAID IN FULL", font=font(14, bold=True), fill=(30, 160, 80))
     bill = bill.rotate(-7, expand=True, resample=Image.BICUBIC)
-    # shadow behind bill
-    bsh = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    bsd = ImageDraw.Draw(bsh)
-    bsd.rectangle([800 * S, 480 * S, 985 * S, 600 * S], fill=(40, 50, 60, 55))
-    bsh = bsh.filter(ImageFilter.GaussianBlur(10 * S))
-    img.paste(Image.alpha_composite(img.convert("RGBA"), bsh).convert("RGB"), (0, 0))
-    img.paste(bill, (740 * S, 195 * S), bill)
+    img.paste(bill, (688, 300), bill)
 
-    # ---- downscale to final size ----
-    img = img.resize((1024, 768), Image.LANCZOS)
-
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR") or os.path.join(os.getcwd(), "out")
+    # ---- output -------------------------------------------------------------
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR") or os.path.join(".", "out")
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, "entry.png")
-    img.save(out_path, "PNG", optimize=True)
-    print("wrote", out_path, img.size, os.path.getsize(out_path), "bytes")
+    path = os.path.join(out_dir, "entry.png")
+    img.save(path, format="PNG", optimize=True)
+    print(f"wrote {path} {img.size} {os.path.getsize(path)} bytes")
 
 
 if __name__ == "__main__":
